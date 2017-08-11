@@ -1,5 +1,6 @@
 import tensorflow as tf
 from tensorflow.examples.tutorials.mnist import input_data
+import tf.contrib.ffmpeg
 import numpy as np
 from scipy.misc import imsave
 import os
@@ -12,6 +13,8 @@ import sys
 
 from layers import *
 from model import *
+
+samples_per_second = 44100
 
 img_height = 256
 img_width = 256
@@ -43,7 +46,6 @@ ngf = 32
 ndf = 64
 
 class CycleGAN():
-
     def input_setup(self):
 
         ''' 
@@ -53,9 +55,9 @@ class CycleGAN():
         self.image_A/self.image_B -> Input image with each values ranging from [-1,1]
         '''
 
-        filenames_A = tf.train.match_filenames_once("./input/horse2zebra/trainA/*.jpg")    
+        filenames_A = tf.train.match_filenames_once("./input/vangogh2photo/trainA/*.jpg")    
         self.queue_length_A = tf.size(filenames_A)
-        filenames_B = tf.train.match_filenames_once("./input/horse2zebra/trainB/*.jpg")    
+        filenames_B = tf.train.match_filenames_once("./input/vangogh2photo/trainB/*.jpg")    
         self.queue_length_B = tf.size(filenames_B)
         
         filename_queue_A = tf.train.string_input_producer(filenames_A)
@@ -68,7 +70,43 @@ class CycleGAN():
         self.image_A = tf.subtract(tf.div(tf.image.resize_images(tf.image.decode_jpeg(image_file_A),[256,256]),127.5),1)
         self.image_B = tf.subtract(tf.div(tf.image.resize_images(tf.image.decode_jpeg(image_file_B),[256,256]),127.5),1)
 
-    
+    # Reads wav file and produces spectrum
+    # Fourier phases are ignored
+    def read_audio_spectum(filename):
+        N_FFT = 2048
+        x, fs = librosa.load(filename)
+        S = librosa.stft(x, N_FFT)
+        p = np.angle(S)
+        
+        S = np.log1p(np.abs(S[:,:430]))  
+        return S, fs
+
+    def audio_input_setup(self):
+        ''' 
+        This function basically setup variables for taking audio input.
+        Only support .wav files for now.
+
+        filenames_A/filenames_B -> takes the list of all training images
+        self.image_A/self.image_B -> Input image with each values ranging from [-1,1]
+        '''
+
+        filenames_A = tf.train.match_filenames_once("./input/horse2zebra/trainA/*.wav")    
+        self.queue_length_A = tf.size(filenames_A)
+        filenames_B = tf.train.match_filenames_once("./input/horse2zebra/trainB/*.wav")    
+        self.queue_length_B = tf.size(filenames_B)
+        
+        filename_queue_A = tf.train.string_input_producer(filenames_A)
+        filename_queue_B = tf.train.string_input_producer(filenames_B)
+
+        a_content, fs = read_audio_spectum(filename_queue_A)
+        a_style, fs = read_audio_spectum(filename_queue_B)
+
+        waveform_A = tf.contrib.ffmpeg.decode_audio(audio_file_A, file_format='wav', samples_per_second=samples_per_second)
+        waveform_B = tf.contrib.ffmpeg.decode_audio(audio_file_B, file_format='wav', samples_per_second=samples_per_second)
+
+        
+        self.audio_A = tf.subtract(tf.div(tf.image.resize_images(waveform_A,[256,256]),127.5),1)
+        self.audio_B = tf.subtract(tf.div(tf.image.resize_images(waveform_A,[256,256]),127.5),1)
 
     def input_read(self, sess):
 
@@ -107,8 +145,6 @@ class CycleGAN():
 
         coord.request_stop()
         coord.join(threads)
-
-
 
 
     def model_setup(self):
